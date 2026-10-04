@@ -1,0 +1,121 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  EMPLOYEE
+  MANAGER
+  PROCUREMENT
+  ADMIN
+}
+
+enum PurchaseRequestStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  PURCHASING
+  COMPLETED
+  CANCELLED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  code      String   @unique
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id               String            @id @default(uuid())
+  email            String            @unique
+  fullName         String
+  role             Role              @default(EMPLOYEE)
+  departmentId     String
+  department       Department        @relation(fields: [departmentId], references: [id])
+  purchaseRequests PurchaseRequest[]
+  approvals        Approval[]        @relation("ApprovalApprover")
+  auditLogs        AuditLog[]        @relation("AuditLogActor")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([departmentId])
+}
+
+model PurchaseRequest {
+  id          String                @id @default(uuid())
+  title       String
+  description String?
+  status      PurchaseRequestStatus @default(DRAFT)
+  requesterId String
+  requester   User                  @relation(fields: [requesterId], references: [id])
+  items       PurchaseRequestItem[]
+  approval    Approval?
+  auditLogs   AuditLog[]
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([requesterId])
+  @@index([status])
+}
+
+model PurchaseRequestItem {
+  id                String          @id @default(uuid())
+  name              String
+  description       String?
+  quantity          Int
+  estimatedUnitCost Decimal?        @db.Decimal(14, 2)
+  purchaseRequestId String
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([purchaseRequestId])
+}
+
+model Approval {
+  id                String          @id @default(uuid())
+  status            ApprovalStatus  @default(PENDING)
+  comment           String?
+  decidedAt         DateTime?
+  purchaseRequestId String          @unique
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  approverId        String?
+  approver          User?           @relation("ApprovalApprover", fields: [approverId], references: [id])
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([approverId])
+}
+
+model AuditLog {
+  id                String          @id @default(uuid())
+  action            String
+  details           Json?
+  purchaseRequestId String
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  actorId           String?
+  actor             User?           @relation("AuditLogActor", fields: [actorId], references: [id])
+  createdAt         DateTime        @default(now())
+
+  @@index([purchaseRequestId])
+  @@index([actorId])
+}
