@@ -7,5 +7,6 @@ import { ApprovalsService } from './approvals.service.js';
   imports: [PrismaModule],
   controllers: [ApprovalsController],
   providers: [ApprovalsService],
+  exports: [ApprovalsService],
 })
 export class ApprovalsModule {}

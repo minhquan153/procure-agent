@@ -1,10 +1,15 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApprovalsService } from './approvals.service.js';
 import { DecideApprovalDto } from './dto/decide-approval.dto.js';
 
 @Controller('approvals')
 export class ApprovalsController {
   constructor(private readonly approvalsService: ApprovalsService) {}
+
+  @Get('pending')
+  findPending(@Query('userId') userId: string) {
+    return this.approvalsService.findPending(userId);
+  }
 
   @Get(':purchaseRequestId')
   findByPurchaseRequest(@Param('purchaseRequestId') purchaseRequestId: string) {

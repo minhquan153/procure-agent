@@ -11,6 +11,7 @@ import { PurchaseRequestsService } from './purchase-requests.service.js';
 type TestUser = {
   id: string;
   role: Role;
+  departmentId: string;
 };
 
 type TestApproval = {
@@ -46,9 +47,10 @@ describe('Purchase request workflow', () => {
     nextRequestId = 1;
 
     const users = new Map<string, TestUser>([
-      ['employee-1', { id: 'employee-1', role: Role.EMPLOYEE }],
-      ['manager-1', { id: 'manager-1', role: Role.MANAGER }],
+      ['employee-1', { id: 'employee-1', role: Role.EMPLOYEE, departmentId: 'dept-1' }],
+      ['manager-1', { id: 'manager-1', role: Role.MANAGER, departmentId: 'dept-1' }],
     ]);
+    const budgets = new Map([['dept-1:2026', { id: 'budget-1', budgetLimit: 100000 }]]);
 
     const materialize = (request: TestRequest) => ({
       ...request,
@@ -63,6 +65,11 @@ describe('Purchase request workflow', () => {
       user: {
         findUnique: async ({ where }: { where: { id: string } }) =>
           users.get(where.id) ?? null,
+        findFirst: async () => users.get('manager-1') ?? null,
+      },
+      departmentBudget: {
+        findUnique: async ({ where }: { where: { departmentId_fiscalYear: { departmentId: string; fiscalYear: number } } }) =>
+          budgets.get(`${where.departmentId_fiscalYear.departmentId}:${where.departmentId_fiscalYear.fiscalYear}`) ?? null,
       },
       purchaseRequest: {
         create: async ({ data }: { data: Record<string, any> }) => {
@@ -77,16 +84,26 @@ describe('Purchase request workflow', () => {
           requests.set(request.id, request);
           return materialize(request);
         },
-        findUnique: async ({ where }: { where: { id: string } }) => {
+        findUnique: async ({ where, select }: { where: { id: string }; select?: Record<string, any> }) => {
           const request = requests.get(where.id);
           if (!request) return null;
+          if (select?.approval) {
+            return {
+              ...request,
+              requester: users.get(request.requesterId),
+              approval: approvals.get(request.id) ?? null,
+            };
+          }
           return {
             ...materialize(request),
+            requester: users.get(request.requesterId),
             approval: approvals.has(request.id)
               ? { id: approvals.get(request.id)!.id }
               : null,
+            items: request.items,
           };
         },
+        findMany: async () => [],
         update: async ({
           where,
           data,
@@ -100,17 +117,21 @@ describe('Purchase request workflow', () => {
         },
       },
       approval: {
-        create: async ({ data }: { data: { purchaseRequestId: string } }) => {
+        create: async ({ data }: { data: { purchaseRequestId: string; approverId?: string } }) => {
           const approval: TestApproval = {
             id: `approval-${data.purchaseRequestId}`,
             purchaseRequestId: data.purchaseRequestId,
             status: ApprovalStatus.PENDING,
-            approverId: null,
+            approverId: data.approverId ?? null,
             comment: null,
             decidedAt: null,
           };
           approvals.set(data.purchaseRequestId, approval);
           return approval;
+        },
+        findUnique: async ({ where }: { where: { purchaseRequestId: string } }) => {
+          const approval = approvals.get(where.purchaseRequestId);
+          return approval ? { ...approval } : null;
         },
         update: async ({
           where,
@@ -130,6 +151,7 @@ describe('Purchase request workflow', () => {
           return data;
         },
       },
+      department: { findFirst: async () => null },
       $transaction: async (callback: (client: unknown) => unknown) =>
         callback(prisma),
     };
@@ -167,7 +189,7 @@ describe('Purchase request workflow', () => {
 
     expect(submitted.status).toBe(PurchaseRequestStatus.PENDING_APPROVAL);
     expect(approvals.get(draft.id)?.status).toBe(ApprovalStatus.PENDING);
-    expect(auditLogs).toHaveLength(1);
+    expect(auditLogs).toHaveLength(2);
   });
 
   it('allows a manager to approve a submitted request', async () => {
@@ -188,7 +210,7 @@ describe('Purchase request workflow', () => {
       comment: 'Approved for this quarter',
     });
     expect(approvals.get(draft.id)?.decidedAt).toBeInstanceOf(Date);
-    expect(auditLogs).toHaveLength(2);
+    expect(auditLogs).toHaveLength(3);
   });
 
   it('allows a manager to reject a submitted request', async () => {

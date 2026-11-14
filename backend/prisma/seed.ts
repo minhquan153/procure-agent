@@ -40,9 +40,9 @@ async function main(): Promise<void> {
     },
     {
       email: 'manager@procure-agent.local',
-      fullName: 'Finance Manager',
+      fullName: 'IT Manager',
       role: Role.MANAGER,
-      departmentCode: 'FIN',
+      departmentCode: 'IT',
     },
     {
       email: 'employee.it@procure-agent.local',
@@ -84,8 +84,25 @@ async function main(): Promise<void> {
     });
   }
 
+  const fiscalYear = new Date().getFullYear();
+  await Promise.all(
+    departments.map((department) =>
+      prisma.departmentBudget.upsert({
+        where: {
+          departmentId_fiscalYear: { departmentId: department.id, fiscalYear },
+        },
+        update: {},
+        create: {
+          departmentId: department.id,
+          fiscalYear,
+          budgetLimit: '100000',
+        },
+      }),
+    ),
+  );
+
   console.log(
-    `Seeded ${departments.length} departments and ${users.length} users.`,
+    `Seeded ${departments.length} departments, ${users.length} users, and ${departments.length} budgets for ${fiscalYear}.`,
   );
 }
 

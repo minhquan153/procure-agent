@@ -21,15 +21,35 @@ export class ApprovalsService {
       where: { purchaseRequestId },
       include: { approver: true, purchaseRequest: true },
     });
-
     if (!approval) {
-      throw new NotFoundException(
-        `Approval for purchase request ${purchaseRequestId} not found`,
-      );
+      throw new NotFoundException(`Approval for purchase request ${purchaseRequestId} not found`);
     }
-
     return approval;
   }
+
+  async findPending(userId: string) {
+    if (!userId?.trim()) throw new BadRequestException('userId is required');
+    const manager = await this.prisma.user.findUnique({
+      where: { id: userId }, select: { id: true, role: true, departmentId: true },
+    });
+    if (!manager) throw new NotFoundException(`User ${userId} not found`);
+    if (manager.role !== Role.MANAGER) {
+      throw new ForbiddenException('Only users with the MANAGER role can view pending approvals');
+    }
+    return this.prisma.purchaseRequest.findMany({
+      where: {
+        status: PurchaseRequestStatus.PENDING_APPROVAL,
+        approval: { approverId: manager.id },
+      },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        requester: { include: { department: true } }, items: true,
+        approval: { include: { approver: true } },
+        auditLogs: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+  }
+
 
   approve(purchaseRequestId: string, dto: DecideApprovalDto) {
     return this.decide(
@@ -47,6 +67,19 @@ export class ApprovalsService {
       ApprovalStatus.REJECTED,
       PurchaseRequestStatus.REJECTED,
     );
+  }
+
+  async listAuditLogs(userId: string) {
+    if (!userId?.trim()) throw new BadRequestException('userId is required');
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId }, select: { role: true },
+    });
+    if (!actor) throw new NotFoundException(`User ${userId} not found`);
+    if (actor.role !== Role.ADMIN) throw new ForbiddenException('Only ADMIN can view audit logs');
+    return this.prisma.auditLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { actor: true, purchaseRequest: true },
+    });
   }
 
   private async decide(
@@ -77,7 +110,12 @@ export class ApprovalsService {
 
       const purchaseRequest = await tx.purchaseRequest.findUnique({
         where: { id: purchaseRequestId },
-        select: { id: true, status: true, approval: { select: { id: true } } },
+        select: {
+          id: true,
+          status: true,
+          requester: { select: { departmentId: true } },
+          approval: { select: { id: true, approverId: true } },
+        },
       });
 
       if (!purchaseRequest) {
@@ -96,6 +134,12 @@ export class ApprovalsService {
         throw new NotFoundException(
           `Approval for purchase request ${purchaseRequestId} not found`,
         );
+      }
+      if (purchaseRequest.approval.approverId !== dto.userId) {
+        throw new ForbiddenException('Only the assigned department manager can decide this request');
+      }
+      if (approvalStatus === ApprovalStatus.REJECTED && !dto.comment?.trim()) {
+        throw new BadRequestException('A reason is required when rejecting a request');
       }
 
       const decidedAt = new Date();
@@ -131,6 +175,6 @@ export class ApprovalsService {
           auditLogs: { orderBy: { createdAt: 'asc' } },
         },
       });
-    });
+    }, { isolationLevel: 'Serializable' });
   }
 }
