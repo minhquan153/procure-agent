@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, Role } from '../src/generated/prisma/client.js';
+import { hashPassword } from '../src/auth/password.js';
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -13,6 +14,11 @@ const prisma = new PrismaClient({
 });
 
 async function main(): Promise<void> {
+  const demoPassword = process.env.SEED_DEFAULT_PASSWORD ?? 'ProcureDemo123!';
+  if (demoPassword.length < 12) {
+    throw new Error('SEED_DEFAULT_PASSWORD must be at least 12 characters');
+  }
+  const passwordHash = await hashPassword(demoPassword);
   const departments = await Promise.all(
     [
       { code: 'IT', name: 'IT' },
@@ -75,6 +81,8 @@ async function main(): Promise<void> {
       fullName: user.fullName,
       role: user.role,
       departmentId,
+      passwordHash,
+      isActive: true,
     };
 
     await prisma.user.upsert({

@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { CurrentUser } from '../auth/auth.decorators.js';
+import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { DepartmentsService } from './departments.service.js';
 import { SetDepartmentBudgetDto } from './dto/set-department-budget.dto.js';
 
@@ -17,7 +19,11 @@ export class DepartmentsController {
   }
 
   @Post(':id/budgets')
-  setBudget(@Param('id') id: string, @Body() dto: SetDepartmentBudgetDto) {
-    return this.departmentsService.setBudget(id, dto);
+  setBudget(@Param('id') id: string, @Body() dto: SetDepartmentBudgetDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.departmentsService.setBudget(id, {
+      userId: user.id,
+      fiscalYear: dto.fiscalYear,
+      budgetLimit: dto.budgetLimit,
+    });
   }
 }

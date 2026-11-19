@@ -7,10 +7,12 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { PurchaseRequestsModule } from './purchase-requests/purchase-requests.module.js';
 import { UsersModule } from './users/users.module.js';
 import { AuditLogsModule } from './audit-logs/audit-logs.module.js';
+import { AuthModule } from './auth/auth.module.js';
 
 @Module({
   imports: [
     PrismaModule,
+    AuthModule,
     DepartmentsModule,
     UsersModule,
     PurchaseRequestsModule,

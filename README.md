@@ -1,33 +1,12 @@
 # Procure Agent
 
-Full stack TypeScript starter for an internal procurement management system. The current implementation covers the core purchase request workflow, approval decisions, department budgets, procurement status updates, and audit history. Authentication and the LLM Agent are not implemented yet.
-
-## Project structure
-
-```text
-frontend/  Next.js web app
-backend/   NestJS API and Prisma data layer
-docs/      Design and architecture notes
-```
-
-## Requirements
-
-- Node.js 20.9 or newer
-- npm
-- PostgreSQL
+Internal procurement workflow built with Next.js, NestJS, Prisma, and PostgreSQL. The current app supports internal account login, request drafting, approval, procurement status updates, and audit history. LLM Agent, user administration, and in-app notifications are not implemented.
 
 ## Run locally
 
-Create a PostgreSQL database and configure `backend/.env` from `backend/.env.example`:
+Configure `backend/.env` from `backend/.env.example`. The seed gives all sample accounts the value of `SEED_DEFAULT_PASSWORD` (local default: `ProcureDemo123!`). Change that value for any shared environment.
 
-```env
-DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5433/procure_agent?schema=public"
-PORT=3001
-```
-
-Install dependencies in both apps if needed. Then prepare the database and sample users:
-
-```bash
+```powershell
 cd backend
 npm install
 npm exec prisma migrate deploy
@@ -37,46 +16,60 @@ npm run start:dev
 
 In another terminal:
 
-```bash
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-The web app runs at <http://localhost:3000> and the API at <http://localhost:3001>.
+Open <http://localhost:3000>. Sign in with one of the seeded accounts:
 
-The seed creates IT, Finance, and Marketing departments; sample Employee, Manager, Procurement, and Admin accounts; and a sample budget for the current fiscal year. Sample accounts are for local development only.
+| Role | Email |
+| --- | --- |
+| Admin | `admin@procure-agent.local` |
+| Manager | `manager@procure-agent.local` |
+| Employee | `employee.it@procure-agent.local` |
+| Procurement | `procurement@procure-agent.local` |
 
-## Implemented API
+The seed also creates a Marketing Employee account. All sample accounts use the configured seed password. There is no public registration flow.
 
-Requests are created as drafts with at least one item. Only the owning Employee can edit or cancel a draft or submit it. Submission requires every item's quantity and estimated unit cost, a configured current-year department budget with sufficient capacity, and a Manager assigned in the requester's department. Approvals are assigned to that Manager. Procurement can move an approved request to purchasing and then complete it. Important changes are recorded in the audit log.
+## Authentication
 
-| Method | Endpoint | Purpose |
+`POST /auth/login` checks the email and scrypt password hash, then creates a server-side session. The raw random session token is sent only in an HttpOnly, SameSite=Lax cookie; PostgreSQL stores only its SHA-256 hash. `GET /auth/me` returns the authenticated account. `POST /auth/logout` revokes the active session and clears the cookie. Sessions expire after seven days.
+
+All API routes require a valid session except `POST /auth/login` and the root health endpoint. Protected handlers derive actor identity from the session; client-supplied `userId` values are ignored or no longer accepted. Role checks remain in business services and admin-only user reads. Configure `FRONTEND_ORIGIN` to the exact frontend origin. Production deployments must use HTTPS so the session cookie is marked Secure.
+
+## Main workflow routes
+
+| Method | Endpoint | Access / purpose |
 | --- | --- | --- |
-| `POST` | `/purchase-requests` | Create a draft request with items |
-| `GET` | `/purchase-requests?userId=...` | List requests (filtered to requester when supplied) |
-| `GET` | `/purchase-requests/:id` | Get request details and history |
-| `PATCH` | `/purchase-requests/:id?userId=...` | Edit an owned draft |
-| `POST` | `/purchase-requests/:id/cancel` | Cancel an owned draft (`userId`) |
-| `POST` | `/purchase-requests/:id/submit` | Validate budget and send for approval (`userId`) |
-| `GET` | `/purchase-requests/approvals/pending?userId=...` | Manager's assigned approval queue |
-| `POST` | `/approvals/:requestId/approve` | Approve an assigned request (`userId`, optional `comment`) |
-| `POST` | `/approvals/:requestId/reject` | Reject an assigned request (requires `userId` and `comment`) |
-| `GET` | `/purchase-requests/procurement/queue?userId=...` | Procurement queue |
-| `POST` | `/purchase-requests/:id/start-purchasing` | Begin procurement (`userId`) |
-| `POST` | `/purchase-requests/:id/complete` | Complete procurement (`userId`) |
-| `POST` | `/departments/:id/budgets` | Set a fiscal-year budget (Admin `userId`) |
-| `GET` | `/audit-logs?userId=...` | Admin audit history |
-
-The API currently accepts `userId` in request bodies or query parameters as a development stand-in. It does not authenticate callers; this is not suitable for deployment with real users or data until a trusted authentication layer supplies the actor identity.
+| `POST` | `/auth/login` | Public login; sets session cookie |
+| `GET` | `/auth/me` | Current session profile |
+| `POST` | `/auth/logout` | Revoke current session |
+| `POST` | `/purchase-requests` | Employee creates a draft |
+| `GET` | `/purchase-requests` | Employee lists their requests |
+| `GET` | `/purchase-requests/:id` | View an authorized request |
+| `PATCH` | `/purchase-requests/:id` | Employee edits an owned draft |
+| `POST` | `/purchase-requests/:id/cancel` | Employee cancels an owned draft |
+| `POST` | `/purchase-requests/:id/submit` | Employee sends a valid draft for approval |
+| `GET` | `/purchase-requests/manager-queue` | Assigned Manager queue |
+| `POST` | `/approvals/:id/approve` | Assigned Manager approves |
+| `POST` | `/approvals/:id/reject` | Assigned Manager rejects with a reason |
+| `GET` | `/purchase-requests/procurement/queue` | Procurement/Admin queue |
+| `POST` | `/purchase-requests/:id/start-purchasing` | Procurement begins work |
+| `POST` | `/purchase-requests/:id/complete` | Procurement completes work |
+| `POST` | `/departments/:id/budgets` | Admin configures a yearly budget |
+| `GET` | `/audit-logs` | Admin audit history |
 
 ## Validation
 
-```bash
-cd backend
-npm run build
-npm test
+```powershell
+cd frontend
 npm run lint
+npm run build
+
+cd ..\backend
+npm run build
 ```
 
-The workflow tests use an in-memory Prisma mock. Applying the migration and seed against PostgreSQL is a separate local setup step.
+Backend workflow unit tests use a mocked Prisma client; they are not PostgreSQL integration tests.

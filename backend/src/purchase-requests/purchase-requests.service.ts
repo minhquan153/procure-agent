@@ -65,7 +65,7 @@ export class PurchaseRequestsService {
         details: { status: PurchaseRequestStatus.DRAFT },
       },
     });
-    return this.findOne(request.id);
+    return this.findOne(request.id, dto.requesterId);
   }
 
   findAll(userId?: string) {
@@ -210,7 +210,7 @@ export class PurchaseRequestsService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string) {
     const purchaseRequest = await this.prisma.purchaseRequest.findUnique({
       where: { id },
       include: purchaseRequestInclude,
@@ -219,6 +219,18 @@ export class PurchaseRequestsService {
     if (!purchaseRequest) {
       throw new NotFoundException(`Purchase request ${id} not found`);
     }
+
+    const actor = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const procurementVisibleStatuses: PurchaseRequestStatus[] = [
+      PurchaseRequestStatus.APPROVED,
+      PurchaseRequestStatus.PURCHASING,
+      PurchaseRequestStatus.COMPLETED,
+    ];
+    const allowed = actor?.role === Role.ADMIN ||
+      purchaseRequest.requesterId === userId ||
+      purchaseRequest.approval?.approverId === userId ||
+      (actor?.role === Role.PROCUREMENT && procurementVisibleStatuses.includes(purchaseRequest.status));
+    if (!allowed) throw new NotFoundException(`Purchase request ${id} not found`);
 
     return purchaseRequest;
   }

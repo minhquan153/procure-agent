@@ -1,69 +1,69 @@
-import Image from "next/image";
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { apiRequest } from "@/lib/api";
+import type { PurchaseRequest, User } from "@/types/api";
+
+const labels: Record<string, string> = {
+  DRAFT: "Bản nháp",
+  PENDING_APPROVAL: "Chờ duyệt",
+  APPROVED: "Đã duyệt",
+  PURCHASING: "Đang thu mua",
+  COMPLETED: "Hoàn tất",
+  REJECTED: "Từ chối",
+  CANCELLED: "Đã hủy",
+};
+
+const rolePage: Record<string, { path: string; label: string }> = {
+  EMPLOYEE: { path: "/requests", label: "Yêu cầu của tôi" },
+  MANAGER: { path: "/approvals", label: "Yêu cầu chờ duyệt" },
+  PROCUREMENT: { path: "/procurement", label: "Yêu cầu cần thu mua" },
+  ADMIN: { path: "/procurement", label: "Quản lý yêu cầu" },
+};
 
 export default function Home() {
+  const [user, setUser] = useState<User | null>(null);
+  const [requests, setRequests] = useState<PurchaseRequest[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    apiRequest<User>("/auth/me").then(async (current) => {
+      if (!active) return;
+      setUser(current);
+      const path = current.role === "MANAGER"
+        ? "/purchase-requests/manager-queue"
+        : current.role === "PROCUREMENT" || current.role === "ADMIN"
+          ? "/purchase-requests/procurement/queue"
+          : "/purchase-requests";
+      try {
+        const result = await apiRequest<PurchaseRequest[]>(path);
+        if (active) setRequests(result);
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : "Không tải được yêu cầu.");
+      }
+    }).catch((cause: Error) => { if (active) setError(cause.message); });
+    return () => { active = false; };
+  }, []);
+
+  const action = user ? rolePage[user.role] : rolePage.EMPLOYEE;
+  const counts = ["DRAFT", "PENDING_APPROVAL", "PURCHASING", "COMPLETED"] as const;
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="dashboard">
+      <header className="dashboard-header">
+        <div><p className="dashboard-date">PROCUREMENT</p><h1>Xin chào{user ? `, ${user.fullName}` : ""}</h1><p className="dashboard-subtitle">Theo dõi các yêu cầu mua sắm của bạn.</p></div>
+        {user?.role === "EMPLOYEE" && <Link href="/requests/new" className="button button-primary dashboard-primary-action">＋ Tạo yêu cầu</Link>}
+      </header>
+
+      <section className="dashboard-metrics" aria-label="Tổng quan yêu cầu">
+        {counts.map((status) => <article className="metric-card" key={status}><span>{labels[status]}</span><strong>{requests.filter((request) => request.status === status).length}</strong></article>)}
+      </section>
+
+      <section className="dashboard-list-panel">
+        <div className="dashboard-list-heading"><div><h2>{action.label}</h2><p>{requests.length} yêu cầu</p></div><Link className="button button-secondary" href={action.path}>Xem danh sách <span aria-hidden="true">→</span></Link></div>
+        {error ? <p className="dashboard-message" role="status">{error}</p> : requests.length ? <div className="dashboard-recent-list">{requests.slice(0, 5).map((request) => <Link className="dashboard-request-row" href={`/requests/${request.id}`} key={request.id}><span className="dashboard-request-main"><strong>{request.title}</strong><small>{request.items.length} mặt hàng · {new Date(request.updatedAt).toLocaleDateString("vi-VN")}</small></span><span className={`status-pill status-${request.status.toLowerCase()}`}>{labels[request.status]}</span><span className="dashboard-row-arrow" aria-hidden="true">→</span></Link>)}</div> : <div className="dashboard-empty"><p>Chưa có yêu cầu nào.</p>{user?.role === "EMPLOYEE" && <Link href="/requests/new">Tạo yêu cầu đầu tiên <span aria-hidden="true">→</span></Link>}</div>}
+      </section>
     </div>
   );
 }

@@ -16,13 +16,19 @@ import { DecideApprovalDto } from './dto/decide-approval.dto.js';
 export class ApprovalsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findByPurchaseRequest(purchaseRequestId: string) {
+  async findByPurchaseRequest(purchaseRequestId: string, userId: string) {
     const approval = await this.prisma.approval.findUnique({
       where: { purchaseRequestId },
       include: { approver: true, purchaseRequest: true },
     });
     if (!approval) {
       throw new NotFoundException(`Approval for purchase request ${purchaseRequestId} not found`);
+    }
+    if (approval.approverId !== userId && approval.purchaseRequest.requesterId !== userId) {
+      const actor = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+      if (actor?.role !== Role.ADMIN) {
+        throw new NotFoundException(`Approval for purchase request ${purchaseRequestId} not found`);
+      }
     }
     return approval;
   }
