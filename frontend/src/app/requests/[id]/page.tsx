@@ -7,6 +7,7 @@ import { apiRequest } from "@/lib/api";
 import { useCurrentUser } from "@/lib/current-user";
 import { formatDate, formatMoney, requestTotal, statusLabels } from "@/lib/format";
 import type { PurchaseRequest } from "@/types/api";
+import { useConfirmation } from "@/components/confirmation-dialog";
 
 export default function RequestDetailsPage() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +17,7 @@ export default function RequestDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const { ask, dialog } = useConfirmation();
 
   const load = useCallback(async () => {
     const result = await apiRequest<PurchaseRequest>(`/purchase-requests/${id}`);
@@ -39,6 +41,17 @@ export default function RequestDetailsPage() {
     } finally { setBusy(false); }
   }
 
+  async function confirmAction(path: "submit" | "cancel") {
+    const isSubmit = path === "submit";
+    const confirmed = await ask({
+      title: isSubmit ? "G\u1eedi y\u00eau c\u1ea7u ph\u00ea duy\u1ec7t?" : "H\u1ee7y b\u1ea3n nh\u00e1p?",
+      message: isSubmit ? "Sau khi g\u1eedi, b\u1ea1n s\u1ebd kh\u00f4ng th\u1ec3 ch\u1ec9nh s\u1eeda y\u00eau c\u1ea7u." : "B\u1ea1n c\u00f3 ch\u1eafc mu\u1ed1n h\u1ee7y b\u1ea3n nh\u00e1p n\u00e0y? Thao t\u00e1c kh\u00f4ng th\u1ec3 ho\u00e0n t\u00e1c.",
+      confirmLabel: isSubmit ? "G\u1eedi duy\u1ec7t" : "H\u1ee7y b\u1ea3n nh\u00e1p",
+      danger: !isSubmit,
+    });
+    if (confirmed) await act(path, {}, isSubmit ? "Kh\u00f4ng g\u1eedi \u0111\u01b0\u1ee3c y\u00eau c\u1ea7u." : "Kh\u00f4ng h\u1ee7y \u0111\u01b0\u1ee3c b\u1ea3n nh\u00e1p.");
+  }
+
   if (loading) return <div className="loading-state">Đang tải chi tiết yêu cầu...</div>;
   if (!request) return <div className="page-stack"><Link className="back-link" href="/requests">← Danh sách yêu cầu</Link><div className="form-error">{error || "Không tìm thấy yêu cầu."}</div></div>;
 
@@ -46,9 +59,10 @@ export default function RequestDetailsPage() {
   const total = requestTotal(request.items);
   const missingUnitCost = request.items.some((item) => item.estimatedUnitCost === null);
   return (
+    <>
     <div className="page-stack">
       <Link className="back-link" href="/requests">← Danh sách yêu cầu</Link>
-        <div className="detail-heading"><div><div className="detail-title-row"><h1>{request.title}</h1><span className={`status-pill status-${request.status.toLowerCase()}`}>{statusLabels[request.status]}</span></div><div className="detail-meta-line">{formatDate(request.createdAt)} · {request.id.slice(0, 8).toUpperCase()}</div>{isOwner && request.status === "DRAFT" && missingUnitCost && <p className="submit-hint">Cần nhập đơn giá cho tất cả mặt hàng trước khi gửi duyệt.</p>}</div><div className="detail-actions">{isOwner && request.status === "DRAFT" && <><Link href={`/requests/${request.id}/edit`} className="button button-light">Chỉnh sửa</Link><button className="button button-primary" disabled={busy || missingUnitCost} onClick={() => act("submit", {}, "Không gửi được yêu cầu.")}>Gửi duyệt</button><button className="button button-danger" disabled={busy} onClick={() => window.confirm("Hủy bản nháp này? Thao tác này không thể hoàn tác.") && act("cancel", {}, "Không hủy được bản nháp.")}>Hủy bản nháp</button></>}</div></div>
+        <div className="detail-heading"><div><div className="detail-title-row"><h1>{request.title}</h1><span className={`status-pill status-${request.status.toLowerCase()}`}>{statusLabels[request.status]}</span></div><div className="detail-meta-line">{formatDate(request.createdAt)} · {request.id.slice(0, 8).toUpperCase()}</div>{isOwner && request.status === "DRAFT" && missingUnitCost && <p className="submit-hint">Cần nhập đơn giá cho tất cả mặt hàng trước khi gửi duyệt.</p>}</div><div className="detail-actions">{isOwner && request.status === "DRAFT" && <><Link href={`/requests/${request.id}/edit`} className="button button-light">Chỉnh sửa</Link><button className="button button-primary" disabled={busy || missingUnitCost} onClick={() => void confirmAction("submit")}>Gửi duyệt</button><button className="button button-danger" disabled={busy} onClick={() => void confirmAction("cancel")}>Hủy bản nháp</button></>}</div></div>
       {error && <div className="form-error" role="alert">{error}</div>}
       {request.status === "REJECTED" && request.approval?.comment && <div className="rejection-note"><strong>Lý do từ chối</strong><p>{request.approval.comment}</p></div>}
       <div className="detail-grid">
@@ -57,5 +71,7 @@ export default function RequestDetailsPage() {
       </div>
       <section className="detail-card timeline-card"><div className="card-heading"><div><div className="section-overline">THEO DÕI</div><h2>Lịch sử hoạt động</h2></div><span className="event-count">{request.auditLogs?.length ?? 0} SỰ KIỆN</span></div><div className="timeline">{request.auditLogs?.length ? request.auditLogs.map((log) => { const details = log.details as { from?: string; to?: string } | null; const actor = users.find((candidate) => candidate.id === log.actorId); const label = details?.to ? `Chuyển trạng thái: ${statusLabels[details.to as keyof typeof statusLabels] ?? details.to}` : log.action === "REQUEST_CREATED" ? "Tạo bản nháp" : log.action === "REQUEST_UPDATED" ? "Cập nhật yêu cầu" : log.action; return <div className="timeline-event" key={log.id}><span className="timeline-dot"/><div><strong>{label}</strong><p>{actor?.fullName ?? "Hệ thống"} · {formatDate(log.createdAt)}</p></div></div>; }) : <p className="muted-copy">Chưa có lịch sử hoạt động.</p>}</div></section>
     </div>
+    {dialog}
+    </>
   );
 }
